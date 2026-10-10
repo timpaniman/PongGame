@@ -16,8 +16,8 @@ const ui = {
   live: document.getElementById("live"),
 };
 
-const wall = { y: 22, size: 14, gap: 12 };
-const paddle = { x: 0, y: LOGICAL_H - 42, w: 140, h: 16, speed: PADDLE_SPEED };
+const wall = { y: 22, h: 6 };
+const paddle = { x: 0, y: LOGICAL_H - 42, w: 70, h: 16, speed: PADDLE_SPEED };
 const ball = { x: LOGICAL_W / 2, y: 150, size: 12, vx: 0, vy: 0 };
 
 const game = {
@@ -49,7 +49,7 @@ function startGame() {
   ball.x = LOGICAL_W / 2;
   ball.y = 120;
   const direction = Math.random() < 0.5 ? -1 : 1;
-  setVelocity(direction * 0.16, 1);
+  setVelocity(direction * 0.07, 1);
   ui.dashboard.hidden = true;
   ui.clock.textContent = `${WIN_SECONDS}s`;
   canvas.focus();
@@ -94,7 +94,7 @@ function stepBall(dt) {
     setVelocity(-Math.abs(ball.vx), ball.vy);
   }
 
-  const wallLine = wall.y + wall.size;
+  const wallLine = wall.y + wall.h;
   if (ball.vy < 0 && ball.y - half <= wallLine) {
     ball.y = wallLine + half;
     setVelocity(ball.vx, Math.abs(ball.vy));
@@ -163,19 +163,12 @@ function draw() {
   ctx.fillStyle = "#000";
   ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
 
+  ctx.fillStyle = "#ff2a2a";
+  ctx.fillRect(0, wall.y, LOGICAL_W, wall.h);
+
   ctx.fillStyle = "#fff";
   ctx.shadowColor = "rgba(255, 255, 255, 0.9)";
   ctx.shadowBlur = 8;
-
-  const span = wall.size + wall.gap;
-  const count = Math.floor((LOGICAL_W - 8) / span);
-  const total = count * wall.size + (count - 1) * wall.gap;
-  let x = (LOGICAL_W - total) / 2;
-  for (let i = 0; i < count; i += 1) {
-    ctx.fillRect(x, wall.y, wall.size, wall.size);
-    x += span;
-  }
-
   ctx.fillRect(ball.x - ball.size / 2, ball.y - ball.size / 2, ball.size, ball.size);
 
   const radius = paddle.h / 2;

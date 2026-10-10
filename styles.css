@@ -34,15 +34,30 @@ body {
   margin-bottom: 14px;
 }
 
+.title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+  min-width: 0;
+}
+
 h1 {
   margin: 0;
+  flex: 0 0 auto;
   font-size: 40px;
   font-weight: 600;
   letter-spacing: -0.03em;
 }
 
+.controls {
+  margin: 0;
+  font-size: 16px;
+}
+
 .clock {
   margin: 0;
+  flex: 0 0 auto;
   font-size: 28px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
