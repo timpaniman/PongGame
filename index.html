@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#000000" />
+  <title>Pong</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="top">
+      <h1>Pong</h1>
+      <p id="clock" class="clock">20s</p>
+    </header>
+    <div id="stage" class="stage">
+      <canvas id="court" width="800" height="520" tabindex="-1" aria-label="Pong court"></canvas>
+      <div id="dashboard" class="dashboard" hidden>
+        <div class="panel">
+          <p>Games won: <strong id="won">0</strong></p>
+          <p>Games lost: <strong id="lost">0</strong></p>
+          <button id="again" type="button">Play again</button>
+        </div>
+      </div>
+    </div>
+    <p class="hint">K moves left. L moves right. Last 20 seconds.</p>
+    <p id="live" class="sr-only" aria-live="polite"></p>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>
