@@ -1,6 +1,7 @@
 const LOGICAL_W = 800;
 const LOGICAL_H = 520;
-const WIN_SECONDS = 20;
+const WIN_SECONDS = 15;
+const SESSION_GAMES = 10;
 const SPEED = 300;
 const PADDLE_SPEED = 560;
 
@@ -12,8 +13,16 @@ const ui = {
   dashboard: document.getElementById("dashboard"),
   won: document.getElementById("won"),
   lost: document.getElementById("lost"),
+  sessionWon: document.getElementById("session-won"),
+  sessionLost: document.getElementById("session-lost"),
   again: document.getElementById("again"),
   download: document.getElementById("download"),
+  rallyPanel: document.getElementById("rally-panel"),
+  sessionPanel: document.getElementById("session-panel"),
+  resultRallies: document.getElementById("result-rallies"),
+  resultHits: document.getElementById("result-hits"),
+  resultMisses: document.getElementById("result-misses"),
+  newSession: document.getElementById("new-session"),
   watch: document.getElementById("watch"),
   controls: document.getElementById("controls"),
   live: document.getElementById("live"),
@@ -28,6 +37,8 @@ const game = {
   played: 0,
   won: 0,
   lost: 0,
+  hits: 0,
+  misses: 0,
 };
 
 const keys = new Set();
@@ -35,6 +46,7 @@ let modelMode = false;
 let modelWeights = null;
 let modelHits = 0;
 let modelRestart = 0;
+let sessionClosed = false;
 let lastFrame = 0;
 let framesSinceFlush = 0;
 let flushBusy = false;
@@ -54,12 +66,15 @@ const telemetry = {
 };
 
 ui.again.addEventListener("click", () => {
+  if (sessionClosed) return;
   modelMode = false;
   ui.watch.textContent = "Watch model";
   startGame();
 });
+ui.newSession.addEventListener("click", startNewSession);
 ui.download.addEventListener("click", downloadTelemetry);
 ui.watch.addEventListener("click", () => {
+  if (sessionClosed) return;
   if (modelMode) {
     modelMode = false;
     ui.watch.textContent = "Watch model";
@@ -93,7 +108,26 @@ if (new URLSearchParams(location.search).get("model") === "1") {
 }
 requestAnimationFrame(frame);
 
+function startNewSession() {
+  window.clearTimeout(modelRestart);
+  sessionClosed = false;
+  modelMode = false;
+  ui.watch.textContent = "Watch model";
+  game.won = 0;
+  game.lost = 0;
+  game.hits = 0;
+  game.misses = 0;
+  showTally();
+  telemetry.session = new Date().toISOString();
+  telemetry.rounds = [];
+  ui.sessionPanel.hidden = true;
+  ui.rallyPanel.hidden = false;
+  ui.dashboard.hidden = true;
+  startGame();
+}
+
 function startGame() {
+  if (sessionClosed) return;
   game.state = "play";
   game.played = 0;
   modelHits = 0;
@@ -110,7 +144,7 @@ function startGame() {
     });
     framesSinceFlush = 0;
     ui.controls.textContent = "Use K to move left, L to move right";
-    announce("New game. Last 20 seconds.");
+    announce("New game. Last 15 seconds.");
   } else {
     ui.controls.textContent = "Model is playing";
     announce("Model is playing.");
@@ -245,6 +279,7 @@ function stepBall(dt) {
     const clamped = Math.max(-1, Math.min(1, offset));
     ball.y = paddle.y - half;
     setVelocity(clamped * 0.85, -1);
+    game.hits += 1;
     if (modelMode) modelHits += 1;
     return;
   }
@@ -319,11 +354,36 @@ function downloadTelemetry() {
   URL.revokeObjectURL(link.href);
 }
 
+function showTally() {
+  const won = String(game.won);
+  const lost = String(game.lost);
+  ui.won.textContent = won;
+  ui.lost.textContent = lost;
+  ui.sessionWon.textContent = won;
+  ui.sessionLost.textContent = lost;
+}
+
 function finish(won) {
   if (game.state !== "play") return;
   game.state = "over";
   ball.vx = 0;
   ball.vy = 0;
+  if (won) game.won += 1;
+  else {
+    game.lost += 1;
+    game.misses += 1;
+  }
+  showTally();
+  if (!modelMode) {
+    const round = currentRound();
+    if (round) round.result = won ? "win" : "loss";
+  }
+  if (game.won + game.lost >= SESSION_GAMES) {
+    window.clearTimeout(modelRestart);
+    sessionClosed = true;
+    showSessionResult();
+    return;
+  }
   if (modelMode) {
     const outcome = won ? "win" : "loss";
     ui.controls.textContent = `Model ${outcome} after ${game.played.toFixed(1)}s. Returns ${modelHits}.`;
@@ -334,17 +394,25 @@ function finish(won) {
     }, 1200);
     return;
   }
-  const round = currentRound();
-  if (round) round.result = won ? "win" : "loss";
-  if (won) game.won += 1;
-  else game.lost += 1;
-  ui.won.textContent = String(game.won);
-  ui.lost.textContent = String(game.lost);
+  ui.sessionPanel.hidden = true;
+  ui.rallyPanel.hidden = false;
   ui.dashboard.hidden = false;
   ui.again.focus();
   announce(won
     ? `You win. Games won ${game.won}. Games lost ${game.lost}.`
     : `You lose. Games won ${game.won}. Games lost ${game.lost}.`);
+}
+
+function showSessionResult() {
+  const rallies = game.won + game.lost;
+  ui.resultRallies.textContent = String(rallies);
+  ui.resultHits.textContent = String(game.hits);
+  ui.resultMisses.textContent = String(game.misses);
+  ui.rallyPanel.hidden = true;
+  ui.sessionPanel.hidden = false;
+  ui.dashboard.hidden = false;
+  ui.newSession.focus();
+  announce(`Session complete. ${rallies} rallies. ${game.hits} hits. ${game.misses} misses.`);
 }
 
 function announce(text) {

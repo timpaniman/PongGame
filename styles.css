@@ -55,12 +55,31 @@ h1 {
   font-size: 16px;
 }
 
+.tally {
+  margin: 0;
+  flex: 0 0 auto;
+  font-size: 16px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.tally strong {
+  font-weight: 600;
+}
+
 .clock {
   margin: 0;
   flex: 0 0 auto;
   font-size: 28px;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
+}
+
+.clock-label {
+  margin-right: 8px;
+  font-size: 16px;
+  letter-spacing: 0.01em;
 }
 
 .stage {
@@ -95,6 +114,10 @@ canvas {
   padding: 8px 4px;
 }
 
+.panel[hidden] {
+  display: none;
+}
+
 .panel p {
   margin: 0 0 10px;
   font-size: 22px;
@@ -111,10 +134,11 @@ button {
   padding: 10px 16px;
   border: 0;
   border-radius: 0;
-  background: #fff;
+  background: #c2b722;
   color: #b40c4c;
   font: inherit;
   font-size: 16px;
+  white-space: nowrap;
   cursor: pointer;
 }
 

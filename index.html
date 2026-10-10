@@ -14,21 +14,28 @@
         <h1>Pong</h1>
         <p id="controls" class="controls">Use K to move left, L to move right</p>
       </div>
+      <p class="tally">Won <strong id="session-won">0</strong> · Lost <strong id="session-lost">0</strong></p>
       <button id="watch" type="button">Watch model</button>
-      <p id="clock" class="clock">20s</p>
+      <p class="clock"><span class="clock-label">Remaining Time</span> <span id="clock">15s</span></p>
     </header>
     <div id="stage" class="stage">
       <canvas id="court" width="800" height="520" tabindex="-1" aria-label="Pong court"></canvas>
       <div id="dashboard" class="dashboard" hidden>
-        <div class="panel">
+        <div id="rally-panel" class="panel">
           <p>Games won: <strong id="won">0</strong></p>
           <p>Games lost: <strong id="lost">0</strong></p>
           <button id="again" type="button">Play again</button>
           <button id="download" type="button" class="ghost">Download telemetry</button>
         </div>
+        <div id="session-panel" class="panel" hidden>
+          <p>Total rallies: <strong id="result-rallies">0</strong></p>
+          <p>Hits: <strong id="result-hits">0</strong></p>
+          <p>Misses: <strong id="result-misses">0</strong></p>
+          <button id="new-session" type="button">New session</button>
+        </div>
       </div>
     </div>
-    <p class="hint">K moves left. L moves right. Last 20 seconds.</p>
+    <p class="hint">K moves left. L moves right. Last 15 seconds.</p>
     <p id="live" class="sr-only" aria-live="polite"></p>
   </main>
   <script src="game.js"></script>
