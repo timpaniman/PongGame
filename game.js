@@ -13,6 +13,9 @@ const ui = {
   won: document.getElementById("won"),
   lost: document.getElementById("lost"),
   again: document.getElementById("again"),
+  download: document.getElementById("download"),
+  watch: document.getElementById("watch"),
+  controls: document.getElementById("controls"),
   live: document.getElementById("live"),
 };
 
@@ -28,56 +31,185 @@ const game = {
 };
 
 const keys = new Set();
+let modelMode = false;
+let modelWeights = null;
+let modelHits = 0;
+let modelRestart = 0;
 let lastFrame = 0;
+let framesSinceFlush = 0;
+let flushBusy = false;
+let flushAgain = false;
 
-ui.again.addEventListener("click", startGame);
+const telemetry = {
+  session: new Date().toISOString(),
+  features: ["state.x", "state.y", "state.vx", "state.vy", "state.paddleX"],
+  normalization: {
+    x: "ball center x / court width",
+    y: "ball center y / court height, 0 at the top",
+    vx: "ball vx / 300",
+    vy: "ball vy / 300",
+    paddleX: "paddle center x / court width",
+  },
+  rounds: [],
+};
+
+ui.again.addEventListener("click", () => {
+  modelMode = false;
+  ui.watch.textContent = "Watch model";
+  startGame();
+});
+ui.download.addEventListener("click", downloadTelemetry);
+ui.watch.addEventListener("click", () => {
+  if (modelMode) {
+    modelMode = false;
+    ui.watch.textContent = "Watch model";
+    startGame();
+    return;
+  }
+  startModelPlay();
+});
 window.addEventListener("keydown", (event) => {
   if (event.code === "KeyK" || event.code === "KeyL") event.preventDefault();
   keys.add(event.code);
 });
 window.addEventListener("keyup", (event) => keys.delete(event.code));
 window.addEventListener("blur", () => keys.clear());
+window.addEventListener("pagehide", () => {
+  if (modelMode) return;
+  const body = JSON.stringify({
+    session: telemetry.session,
+    features: telemetry.features,
+    normalization: telemetry.normalization,
+    rounds: telemetry.rounds,
+  });
+  navigator.sendBeacon("/telemetry", new Blob([body], { type: "application/json" }));
+});
 new ResizeObserver(() => fit()).observe(canvas);
 
-startGame();
+if (new URLSearchParams(location.search).get("model") === "1") {
+  startModelPlay();
+} else {
+  startGame();
+}
 requestAnimationFrame(frame);
 
 function startGame() {
   game.state = "play";
   game.played = 0;
+  modelHits = 0;
   paddle.x = (LOGICAL_W - paddle.w) / 2;
   ball.x = LOGICAL_W / 2;
   ball.y = 120;
   const direction = Math.random() < 0.5 ? -1 : 1;
   setVelocity(direction * 0.07, 1);
+  if (!modelMode) {
+    telemetry.rounds.push({
+      round: telemetry.rounds.length + 1,
+      result: "playing",
+      tuples: [],
+    });
+    framesSinceFlush = 0;
+    ui.controls.textContent = "Use K to move left, L to move right";
+    announce("New game. Last 20 seconds.");
+  } else {
+    ui.controls.textContent = "Model is playing";
+    announce("Model is playing.");
+  }
   ui.dashboard.hidden = true;
   ui.clock.textContent = `${WIN_SECONDS}s`;
   canvas.focus();
-  announce("New game. Last 20 seconds.");
+}
+
+function startModelPlay() {
+  const begin = () => {
+    modelMode = true;
+    ui.watch.textContent = "Play yourself";
+    startGame();
+  };
+  if (modelWeights) {
+    begin();
+    return;
+  }
+  fetch("model_weights.json")
+    .then((response) => response.json())
+    .then((data) => {
+      modelWeights = data;
+      begin();
+    })
+    .catch(() => {
+      ui.controls.textContent = "Model weights did not load.";
+    });
 }
 
 function frame(now) {
-  const dt = Math.min(0.032, lastFrame ? (now - lastFrame) / 1000 : 0);
-  lastFrame = now;
-  if (dt > 0 && game.state === "play") {
-    movePaddle(dt);
-    stepBall(dt);
-    game.played += dt;
-    const remaining = Math.max(0, WIN_SECONDS - game.played);
-    ui.clock.textContent = `${Math.ceil(remaining)}s`;
-    if (game.played >= WIN_SECONDS) finish(true);
+  try {
+    const dt = Math.min(0.032, lastFrame ? (now - lastFrame) / 1000 : 0);
+    lastFrame = now;
+    if (dt > 0 && game.state === "play") {
+      if (!modelMode) recordTuple();
+      movePaddle(dt);
+      stepBall(dt);
+      game.played += dt;
+      const remaining = Math.max(0, WIN_SECONDS - game.played);
+      ui.clock.textContent = `${Math.ceil(remaining)}s`;
+      if (game.state === "play" && game.played >= WIN_SECONDS) finish(true);
+      if (!modelMode) {
+        framesSinceFlush += 1;
+        if (framesSinceFlush >= 30 || game.state !== "play") flushTelemetry();
+      }
+    }
+    fit();
+    draw();
+  } catch (error) {
+    console.error(error);
   }
-  fit();
-  draw();
   requestAnimationFrame(frame);
 }
 
 function movePaddle(dt) {
+  if (modelMode) {
+    const action = modelAction();
+    if (action === 1) return;
+    paddle.x += (action === 2 ? 1 : -1) * paddle.speed * dt;
+    paddle.x = Math.max(0, Math.min(LOGICAL_W - paddle.w, paddle.x));
+    return;
+  }
   const left = keys.has("KeyK");
   const right = keys.has("KeyL");
   if (left === right) return;
   paddle.x += (right ? 1 : -1) * paddle.speed * dt;
   paddle.x = Math.max(0, Math.min(LOGICAL_W - paddle.w, paddle.x));
+}
+
+function modelAction() {
+  const state = [
+    ball.x / LOGICAL_W,
+    ball.y / LOGICAL_H,
+    ball.vx / SPEED,
+    ball.vy / SPEED,
+    (paddle.x + paddle.w / 2) / LOGICAL_W,
+  ];
+  let values = state;
+  modelWeights.layers.forEach((layer, index) => {
+    values = dense(values, layer.kernel, layer.bias, index < modelWeights.layers.length - 1);
+  });
+  let best = 0;
+  for (let i = 1; i < values.length; i += 1) {
+    if (values[i] > values[best]) best = i;
+  }
+  return best;
+}
+
+function dense(input, kernel, bias, relu) {
+  const output = new Array(bias.length);
+  for (let column = 0; column < bias.length; column += 1) {
+    let sum = bias[column];
+    for (let row = 0; row < input.length; row += 1) {
+      sum += input[row] * kernel[row][column];
+    }
+    output[column] = relu ? Math.max(0, sum) : sum;
+  }
+  return output;
 }
 
 function stepBall(dt) {
@@ -113,6 +245,7 @@ function stepBall(dt) {
     const clamped = Math.max(-1, Math.min(1, offset));
     ball.y = paddle.y - half;
     setVelocity(clamped * 0.85, -1);
+    if (modelMode) modelHits += 1;
     return;
   }
 
@@ -125,11 +258,84 @@ function setVelocity(x, y) {
   ball.vy = (y / length) * SPEED;
 }
 
+function currentRound() {
+  return telemetry.rounds[telemetry.rounds.length - 1];
+}
+
+function recordTuple() {
+  const round = currentRound();
+  if (!round || round.result !== "playing") return;
+  const left = keys.has("KeyK");
+  const right = keys.has("KeyL");
+  let action = 0;
+  if (left !== right) action = right ? 1 : -1;
+  round.tuples.push({
+    state: {
+      x: scale(ball.x / LOGICAL_W),
+      y: scale(ball.y / LOGICAL_H),
+      vx: scale(ball.vx / SPEED),
+      vy: scale(ball.vy / SPEED),
+      paddleX: scale((paddle.x + paddle.w / 2) / LOGICAL_W),
+    },
+    action,
+  });
+}
+
+function scale(value) {
+  return Math.round(value * 100000) / 100000;
+}
+
+function flushTelemetry() {
+  framesSinceFlush = 0;
+  if (flushBusy) {
+    flushAgain = true;
+    return;
+  }
+  flushBusy = true;
+  fetch("/telemetry", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      session: telemetry.session,
+      features: telemetry.features,
+      normalization: telemetry.normalization,
+      rounds: telemetry.rounds,
+    }, null, 2),
+  }).finally(() => {
+    flushBusy = false;
+    if (flushAgain) {
+      flushAgain = false;
+      flushTelemetry();
+    }
+  });
+}
+
+function downloadTelemetry() {
+  const blob = new Blob([JSON.stringify(telemetry, null, 2)], { type: "application/json" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "telemetry.json";
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
 function finish(won) {
   if (game.state !== "play") return;
   game.state = "over";
   ball.vx = 0;
   ball.vy = 0;
+  if (modelMode) {
+    const outcome = won ? "win" : "loss";
+    ui.controls.textContent = `Model ${outcome} after ${game.played.toFixed(1)}s. Returns ${modelHits}.`;
+    announce(`Model ${outcome} after ${game.played.toFixed(1)} seconds. ${modelHits} returns.`);
+    window.clearTimeout(modelRestart);
+    modelRestart = window.setTimeout(() => {
+      if (modelMode) startGame();
+    }, 1200);
+    return;
+  }
+  const round = currentRound();
+  if (round) round.result = won ? "win" : "loss";
   if (won) game.won += 1;
   else game.lost += 1;
   ui.won.textContent = String(game.won);
